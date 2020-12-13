@@ -1,0 +1,153 @@
+---
+title: "Time series analysis of Finland monthly birth during 2010-2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Data exploration
+```{r,fig.width = 10,fig.height=4}
+birth.csv = read.table("D:/finland_birth.csv",sep=",", header=TRUE)
+
+par(mfrow=c(1,2))
+birth = ts(birth.csv$birth[1:120], start = c(2010,1),frequency=12)
+ts.plot(birth,main = "Monthly birth in Finland 2010-2020",ylab = 'Birth (n)')
+
+train=ts(birth.csv$birth[1:108], start = c(2010,1),frequency=12)
+ts.plot(train,main = "Training data: 2010-2019",ylab = 'Birth (n)')
+
+test=ts(birth.csv$birth[109:120], start = c(2019,1),frequency=12)
+```
+
+```{r,fig.width = 10,fig.height=4}
+par(mfrow=c(1,2))
+dtrain <- diff(train,1)
+plot(dtrain,main = 'Training data difference at lag 1',ylab = )
+
+ddtrain <- diff(dtrain,12)
+plot(ddtrain,main = 'Training data difference at lag1, lag 12',ylab = )
+
+var(train)
+var(dtrain)
+var(ddtrain)
+```
+
+
+```{r}
+hist(ddtrain,main = 'Histogram of training data after difference at lag1, lag 12')
+```
+
+```{r,fig.width = 12,fig.height=3}
+par(mar=c(3,3,3,3))
+par(mfrow=c(1,2))
+
+acf( ddtrain, lag.max = 60, main = "ACF: First and Seasonally Differenced Time Series")
+
+pacf( ddtrain, lag.max = 60, main = "PACF: First and Seasonally Differenced Time Series")
+```
+
+#Model fitting
+
+P=2, p=4, D=1, d=1, Q=2, q=2
+```{r}
+#infinite number
+#arima(train, order=c(4,1,2), seasonal = list(order = c(2,1,2), period = 12), method="ML")
+```
+
+P=2, p=2, D=1, d=1, Q=2, q=2
+```{r}
+arima(train, order=c(2,1,2), seasonal = list(order = c(2,1,2), period = 12), method="ML")
+```
+
+P=1, p=4, D=1, d=1, Q=2, q=2
+```{r}
+#choose this one
+arima(train, order=c(4,1,2), seasonal = list(order = c(1,1,2), period = 12), method="ML")
+```
+
+P=1, p=4, D=1, d=1, Q=1, q=2
+```{r}
+arima(train, order=c(4,1,2), seasonal = list(order = c(1,1,1), period = 12), method="ML")
+```
+
+```{r}
+arima(train, order=c(4,1,0), seasonal = list(order = c(1,1,2), period = 12),  method="ML")
+```
+
+```{r}
+fit.i=arima(train, order=c(3,1,0), seasonal = list(order = c(1,1,2), period = 12),  fixed = c(NA, NA, NA, NA,0, NA), method="ML")
+fit.i
+```
+
+#Diagnostic checking
+
+```{r,fig.width = 3,fig.height=3}
+par(mar=c(3,3,3,3))
+source("plot.roots.R")
+plot.roots(NULL,polyroot(c(1, 0.6465, 0.5578, 0.2192)), main="AR roots for the final model", size=2.5)
+
+```
+
+
+```{r}
+res = fit.i$residuals
+mean(res)
+```
+
+
+```{r}
+par(mar=c(3,3,3,3))
+layout(matrix(c(1,1,2,3),2,2,byrow=T))
+ts.plot(res,main = "Fitted Residuals")
+t = 1:length(res)
+fit.res = lm(res~t)
+abline(fit.res)
+abline(h = mean(res), col = "red")
+# acf
+acf(res,main = "ACFs of fitted residuals")
+# pacf
+pacf(res,main = "PACFs of fitted residuals")
+```
+
+```{r}
+Box.test(res, lag = 10, type = c("Box-Pierce"), fitdf = 5)
+```
+
+```{r}
+Box.test(res, lag = 10, type = c("Ljung-Box"), fitdf = 5)
+```
+
+```{r}
+Box.test(res^2, 10, type = c("Ljung-Box"), fitdf = 0)
+```
+
+```{r}
+shapiro.test(res)
+```
+
+```{r,fig.width = 8,fig.height=4}
+par(mfrow=c(1,2))
+# Histogram
+hist(res,main = "Histogram of fitted residuals")
+# q-q plot
+qqnorm(res,main = "Normal Q-Q plot of fitted residuals")
+qqline(res,col ="blue")
+```
+
+#Model prediction
+
+```{r}
+pred.tr=predict(fit.i, n.ahead = 24)
+
+U.tr= pred.tr$pred + 2*pred.tr$se # upper bound for the prediction interval for transformed data
+L.tr= pred.tr$pred - 2*pred.tr$se # lower bound
+ts.plot(train, xlim=c(2010,2021), ylim = c(min(L.tr),max(train)),ylab = 'Birth (n)',main='Comparisions between predictions (red) and ground truth (black)') #plot y.tr and forecast
+lines(U.tr, col="blue", lty="dashed")
+lines(L.tr, col="blue", lty="dashed")
+points(pred.tr$pred, col="red")
+points(test, col="black")
+```
+
+
